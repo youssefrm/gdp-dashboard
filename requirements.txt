@@ -7,3 +7,4 @@ openpyxl
 tqdm
 requests
 streamlit-folium
+xlrd
