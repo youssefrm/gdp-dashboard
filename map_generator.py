@@ -173,8 +173,7 @@ def initial_load(data_dir):
                             'activitePrincipaleEtablissement': str,
                             'latitude': float,
                             'longitude': float
-                        },
-                        on_bad_lines='skip'  # Sauter les lignes mal formées
+                        }
                     )
                     data_mo_list.append(temp_df)
                     logging.info(f"Loaded {part} successfully.")
@@ -211,8 +210,7 @@ def initial_load(data_dir):
                             'longitude': float,
                             'matched_line_numbers': str,
                             'distances_km': str
-                        },
-                        on_bad_lines='skip'  # Sauter les lignes mal formées
+                        }
                     )
                     nn_list.append(temp_df)
                     logging.info(f"Loaded {part} successfully.")
