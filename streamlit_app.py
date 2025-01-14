@@ -1,12 +1,14 @@
-# app.py
+# streamlit_app.py
 
 import streamlit as st
 import folium
-from streamlit_folium import folium_static
-from map_generator import initial_load, generate_map
+from streamlit_folium import st_folium
+from map_generator import load_data, generate_map
 import os
+import io
 
 def main():
+    # Configuration de la page
     st.set_page_config(
         page_title='Consumer Map Dashboard',
         page_icon=':earth_americas:',
@@ -15,23 +17,30 @@ def main():
 
     st.title("Consumer Map Dashboard :earth_americas:")
 
-    # Load data
+    # Fonction de chargement des données avec cache
+    @st.cache_data  # Utilisez @st.cache si vous utilisez une version antérieure de Streamlit
+    def get_data(data_directory):
+        return load_data(data_directory)
+
+    # Spécifiez le répertoire des données
     data_directory = "data"  # Chemin relatif vers le répertoire des données
-    with st.spinner("Loading data..."):
+
+    # Chargement des données au démarrage
+    with st.spinner("Chargement des données..."):
         try:
-            initial_load(data_directory)
-            st.success("Data loaded successfully!")
+            data = get_data(data_directory)
+            st.success("Données chargées avec succès !")
         except Exception as e:
-            st.error(f"Failed to load data: {e}")
+            st.error(f"Échec du chargement des données : {e}")
             st.stop()
 
-    # Sidebar for user inputs
-    st.sidebar.header("Input Parameters")
+    # Barre latérale pour les paramètres utilisateur
+    st.sidebar.header("Paramètres d'entrée")
 
-    # Address or Coordinates
-    use_address = st.sidebar.checkbox("Use Address for Geocoding", value=True)
+    # Adresse ou Coordonnées
+    use_address = st.sidebar.checkbox("Utiliser une adresse pour le géocodage", value=True)
     if use_address:
-        address = st.sidebar.text_input("Address", "4 rue de la Paix, Paris")
+        address = st.sidebar.text_input("Adresse", "4 rue de la Paix, Paris")
         lat = None
         lon = None
     else:
@@ -39,49 +48,65 @@ def main():
         lat = st.sidebar.number_input("Latitude", value=48.8566, format="%.6f")
         lon = st.sidebar.number_input("Longitude", value=2.3522, format="%.6f")
 
-    # Radius and Consumption
-    distance_max = st.sidebar.slider("Radius (km)", min_value=0, max_value=50, value=20, step=1)
-    conso_min = st.sidebar.slider("Min Consumption (MWh)", min_value=0, max_value=5000, value=0, step=50)
+    # Rayon et Consommation
+    distance_max = st.sidebar.slider("Rayon (km)", min_value=0, max_value=50, value=20, step=1)
+    conso_min = st.sidebar.slider("Consommation minimale (MWh)", min_value=0, max_value=5000, value=0, step=50)
 
-    # Generate Map Button
-    generate_map_btn = st.sidebar.button("Generate Map")
+    # Bouton pour générer la carte
+    generate_map_btn = st.sidebar.button("Générer la Carte")
 
     if generate_map_btn:
         try:
             if use_address and not address:
-                st.sidebar.error("Please enter an address or uncheck 'Use Address for Geocoding'.")
+                st.sidebar.error("Veuillez entrer une adresse ou décocher 'Utiliser une adresse pour le géocodage'.")
             elif not use_address and (lat is None or lon is None):
-                st.sidebar.error("Please enter valid latitude and longitude.")
+                st.sidebar.error("Veuillez entrer une latitude et une longitude valides.")
             else:
-                with st.spinner("Generating map..."):
+                with st.spinner("Génération de la carte..."):
                     map_object = generate_map(
                         adresse=address if use_address else None,
                         lat=lat if not use_address else None,
                         lon=lon if not use_address else None,
                         distance_max=distance_max,
                         conso_min=conso_min,
-                        data_dir=data_directory
+                        data=data  # Passage des données chargées
                     )
                     
                     if map_object:
-                        st.header("Generated Map")
-                        folium_static(map_object, width=1200, height=800)
+                        st.header("Carte Générée")
+                        # Affichage de la carte avec st_folium
+                        st_folium(map_object, width=1200, height=800)
+
+                        # Conversion de la carte en HTML
+                        map_html = map_object.get_root().render()
+
+                        # Encodage en bytes pour le téléchargement
+                        map_bytes = map_html.encode('utf-8')
+
+                        # Ajout du bouton de téléchargement
+                        st.download_button(
+                            label="Télécharger la Carte en HTML",
+                            data=map_bytes,
+                            file_name="map.html",
+                            mime="text/html"
+                        )
                     else:
-                        st.error("Failed to generate the map.")
+                        st.error("Échec de la génération de la carte.")
         except ValueError as ve:
             st.error(str(ve))
         except Exception as e:
-            st.error(f"An unexpected error occurred: {e}")
+            st.error(f"Une erreur inattendue est survenue : {e}")
 
-    # Additional Features: Display Instructions
+    # Instructions supplémentaires
     st.header("Instructions")
     st.markdown("""
-    - **Use Address for Geocoding:** Check this box to input an address. The application will geocode the address to get latitude and longitude.
-    - **Address:** Enter a specific address to geocode and center the map (e.g., "4 rue de la Paix, Paris").
-    - **Latitude & Longitude:** Alternatively, input geographic coordinates directly by unchecking the above box.
-    - **Radius (km):** Define the search radius around the starting point.
-    - **Min Consumption (MWh):** Set the minimum consumption threshold to filter data points.
-    - Click **Generate Map** to visualize the results.
+    - **Utiliser une adresse pour le géocodage :** Cochez cette case pour entrer une adresse. L'application géocodera l'adresse pour obtenir la latitude et la longitude.
+    - **Adresse :** Entrez une adresse spécifique à géocoder et centrer la carte (par exemple, "4 rue de la Paix, Paris").
+    - **Latitude & Longitude :** Alternativement, entrez directement les coordonnées géographiques en décochant la case ci-dessus.
+    - **Rayon (km) :** Définissez le rayon de recherche autour du point de départ.
+    - **Consommation minimale (MWh) :** Définissez le seuil de consommation minimale pour filtrer les points de données.
+    - Cliquez sur **Générer la Carte** pour visualiser les résultats.
+    - Après génération, vous pouvez télécharger la carte en cliquant sur **Télécharger la Carte en HTML**.
     """)
 
 if __name__ == "__main__":
