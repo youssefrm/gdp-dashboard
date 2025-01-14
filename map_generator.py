@@ -65,14 +65,16 @@ def reverse_geocode_citycode(lat, lon, geo_communes_url="https://geo.api.gouv.fr
     Returns the INSEE code of the commune containing the point (lat, lon).
     """
     params = {"lat": lat, "lon": lon}
-    response_geo = requests.get(geo_communes_url, params=params)
-
-    if response_geo.status_code == 200:
+    try:
+        response_geo = requests.get(geo_communes_url, params=params, timeout=10)
+        response_geo.raise_for_status()
         communes_data = response_geo.json()
         if communes_data:
             commune_info = communes_data[0]
             code_insee = commune_info.get('code', 'Not available')
             return code_insee
+    except Exception as e:
+        logging.error(f"Error in reverse_geocode_citycode: {e}")
     return ""
 
 def load_naf_dict(file_path):
@@ -101,7 +103,7 @@ def get_perimetre_from_dens(dens_value):
     elif dens_value >= 5:
         return 20
     else:
-        return 0  # dens 1 or 2 => 0
+        return 0  # dens 1 ou 2 => 0 km
 
 ###################################
 # Data Loading Function
@@ -153,57 +155,84 @@ def initial_load(data_dir):
         # Load data_mo.csv parts => data_mo_dict
         data_mo_parts = glob.glob(os.path.join(data_dir, "data_mo_part*.csv"))
         if not data_mo_parts:
-            logging.warning("No split data_mo CSV files found in 'split_csvs/data_mo' directory.")
+            logging.warning("No split data_mo CSV files found in 'data/' directory.")
         else:
             data_mo_list = []
             for part in data_mo_parts:
-                temp_df = pd.read_csv(part, low_memory=False, sep=';', dtype={
-                    'id_moral': str,
-                    'siren_proprietaire': str,
-                    'denomination_proprietaire': str,
-                    'adresse': str,
-                    'code_forme_juridique_proprietaire': str,
-                    'activitePrincipaleEtablissement': str,
-                    'latitude': float,
-                    'longitude': float
-                })
-                data_mo_list.append(temp_df)
-            mo_df = pd.concat(data_mo_list, ignore_index=True)
-            mo_df = mo_df.reset_index().rename(columns={'index': 'line_num'})
-            mo_df['line_num'] = mo_df['line_num'] + 1
-            data_mo_dict = mo_df.set_index('line_num').to_dict(orient='index')
-            logging.info(f"Loaded {len(data_mo_dict)} entries from split data_mo CSV files.")
+                try:
+                    temp_df = pd.read_csv(
+                        part,
+                        low_memory=False,
+                        sep=';',  # Assurez-vous que le séparateur est correct
+                        dtype={
+                            'id_moral': str,
+                            'siren_proprietaire': str,
+                            'denomination_proprietaire': str,
+                            'adresse': str,
+                            'code_forme_juridique_proprietaire': str,
+                            'activitePrincipaleEtablissement': str,
+                            'latitude': float,
+                            'longitude': float
+                        },
+                        on_bad_lines='skip'  # Sauter les lignes mal formées
+                    )
+                    data_mo_list.append(temp_df)
+                    logging.info(f"Loaded {part} successfully.")
+                except Exception as e:
+                    logging.error(f"Error loading {part}: {e}")
+
+            if data_mo_list:
+                mo_df = pd.concat(data_mo_list, ignore_index=True)
+                mo_df = mo_df.reset_index().rename(columns={'index': 'line_num'})
+                mo_df['line_num'] = mo_df['line_num'] + 1
+                data_mo_dict = mo_df.set_index('line_num').to_dict(orient='index')
+                logging.info(f"Loaded {len(data_mo_dict)} entries from split data_mo CSV files.")
+            else:
+                logging.warning("No valid data_mo entries loaded.")
 
         # Load nearest_neighbors.csv parts => nearest_df
         nn_parts = glob.glob(os.path.join(data_dir, "nearest_neighbors_part*.csv"))
         if not nn_parts:
-            logging.warning("No split nearest_neighbors CSV files found in 'split_csvs/nearest_neighbors' directory.")
+            logging.warning("No split nearest_neighbors CSV files found in 'data/' directory.")
         else:
             nn_list = []
             for part in nn_parts:
-                temp_df = pd.read_csv(part, sep=',', dtype={
-                    'IRIS_CODE': str,
-                    'CODE_INSEE': str,
-                    'ADRESSE': str,
-                    'NOM_COMMUNE': str,
-                    'matrice': str,
-                    'latitude': float,
-                    'longitude': float,
-                    'matched_line_numbers': str,
-                    'distances_km': str
-                })
-                nn_list.append(temp_df)
-            tmp_nn = pd.concat(nn_list, ignore_index=True)
-            tmp_nn['matched_line_numbers'] = tmp_nn['matched_line_numbers'].apply(
-                lambda x: [int(num.strip()) for num in x.split(';')] if pd.notna(x) else []
-            )
-            tmp_nn['distances_km'] = tmp_nn['distances_km'].apply(
-                lambda x: [float(num.strip()) for num in x.split(';')] if pd.notna(x) else []
-            )
-            tmp_nn['min_conso'] = tmp_nn['matrice'].apply(extract_min_consumption)
-            nearest_df = tmp_nn
-            consommation_min_global = nearest_df['min_conso'].min()
-            logging.info(f"Loaded nearest_neighbors.csv with {nearest_df.shape[0]} entries from split CSV files.")
+                try:
+                    temp_df = pd.read_csv(
+                        part,
+                        sep=',',  # Assurez-vous que le séparateur est correct
+                        dtype={
+                            'IRIS_CODE': str,
+                            'CODE_INSEE': str,
+                            'ADRESSE': str,
+                            'NOM_COMMUNE': str,
+                            'matrice': str,
+                            'latitude': float,
+                            'longitude': float,
+                            'matched_line_numbers': str,
+                            'distances_km': str
+                        },
+                        on_bad_lines='skip'  # Sauter les lignes mal formées
+                    )
+                    nn_list.append(temp_df)
+                    logging.info(f"Loaded {part} successfully.")
+                except Exception as e:
+                    logging.error(f"Error loading {part}: {e}")
+
+            if nn_list:
+                tmp_nn = pd.concat(nn_list, ignore_index=True)
+                tmp_nn['matched_line_numbers'] = tmp_nn['matched_line_numbers'].apply(
+                    lambda x: [int(num.strip()) for num in x.split(';')] if pd.notna(x) else []
+                )
+                tmp_nn['distances_km'] = tmp_nn['distances_km'].apply(
+                    lambda x: [float(num.strip()) for num in x.split(';')] if pd.notna(x) else []
+                )
+                tmp_nn['min_conso'] = tmp_nn['matrice'].apply(extract_min_consumption)
+                nearest_df = tmp_nn
+                consommation_min_global = nearest_df['min_conso'].min()
+                logging.info(f"Loaded nearest_neighbors.csv with {nearest_df.shape[0]} entries from split CSV files.")
+            else:
+                logging.warning("No valid nearest_neighbors entries loaded.")
 
     except Exception as e:
         logging.error(f"Error during initial loading: {e}")
