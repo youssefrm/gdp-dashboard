@@ -200,7 +200,7 @@ def initial_load(data_dir):
                 try:
                     temp_df = pd.read_csv(
                         part,
-                        sep=',',  # Assurez-vous que le séparateur est correct
+                        sep=';',  # Assurez-vous que le séparateur est correct
                         dtype={
                             'IRIS_CODE': str,
                             'CODE_INSEE': str,
