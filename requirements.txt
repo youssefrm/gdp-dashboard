@@ -1,2 +1,9 @@
 streamlit
 pandas
+numpy
+folium
+scikit-learn
+openpyxl
+tqdm
+requests
+streamlit-folium
